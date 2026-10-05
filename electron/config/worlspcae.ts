@@ -1,8 +1,34 @@
 import path from "node:path";
+import { app } from "electron";
 
+/**
+ * Root folder aplikasi Operasional Posyandu.
+ *
+ * Saat development:
+ *   D:\Project\operasional_posyandu
+ *
+ * Saat aplikasi sudah dibuild:
+ *   folder tempat executable/aplikasi berada
+ */
+export const APP_ROOT = app.isPackaged
+    ? path.dirname(app.getPath("exe"))
+    : path.resolve(process.cwd());
+
+/**
+ * Folder PosyanduCare yang berada
+ * satu folder dengan aplikasi Operasional Posyandu.
+ *
+ * Contoh:
+ *
+ * Desktop/
+ * └── Operasional Posyandu/
+ *     ├── Operasional Posyandu.exe
+ *     └── PosyanduCare-main/
+ */
 export const POSYANDU_ROOT =
-    path.resolve(
-        "D:/projek/PosyanduCare-main",
+    path.join(
+        APP_ROOT,
+        "PosyanduCare-main",
     );
 
 export const BACKEND_ROOT =

@@ -9,8 +9,10 @@ import { EventEmitter } from "node:events";
 
 import { promisify } from "node:util";
 
+
 const execFileAsync =
     promisify(execFile);
+
 
 export type ProcessStatus =
     | "stopped"
@@ -18,6 +20,7 @@ export type ProcessStatus =
     | "running"
     | "stopping"
     | "error";
+
 
 export interface ManagedProcessOptions {
 
@@ -35,6 +38,7 @@ export interface ManagedProcessOptions {
 
 }
 
+
 export interface ProcessLogEvent {
 
     service: string;
@@ -47,6 +51,7 @@ export interface ProcessLogEvent {
 
 }
 
+
 export interface ProcessStatusEvent {
 
     service: string;
@@ -54,6 +59,7 @@ export interface ProcessStatusEvent {
     status: ProcessStatus;
 
 }
+
 
 export const PROCESS_EVENT = {
 
@@ -63,15 +69,24 @@ export const PROCESS_EVENT = {
 
 } as const;
 
+
 export class ManagedProcess extends EventEmitter {
 
-    private readonly options: ManagedProcessOptions;
+    private readonly options:
+        ManagedProcessOptions;
 
-    private process: ChildProcess | null = null;
+    private process:
+        ChildProcess | null = null;
 
-    private status: ProcessStatus = "stopped";
+    private status:
+        ProcessStatus = "stopped";
 
     private stopping = false;
+
+    private starting = false;
+
+    private operationId = 0;
+
 
     constructor(
         options: ManagedProcessOptions,
@@ -83,6 +98,7 @@ export class ManagedProcess extends EventEmitter {
 
     }
 
+
     //
     // Getter
     //
@@ -93,29 +109,40 @@ export class ManagedProcess extends EventEmitter {
 
     }
 
+
     public getStatus(): ProcessStatus {
 
         return this.status;
 
     }
 
+
     public isRunning(): boolean {
 
-        return this.process !== null;
+        return (
+            this.process !== null &&
+            this.status === "running"
+        );
 
     }
+
 
     public getPid(): number | null {
 
-        return this.process?.pid ?? null;
+        return (
+            this.process?.pid ??
+            null
+        );
 
     }
+
 
     public getProcess(): ChildProcess | null {
 
         return this.process;
 
     }
+
 
     //
     // Status
@@ -125,7 +152,9 @@ export class ManagedProcess extends EventEmitter {
         status: ProcessStatus,
     ): void {
 
-        if (this.status === status) {
+        if (
+            this.status === status
+        ) {
 
             return;
 
@@ -139,7 +168,8 @@ export class ManagedProcess extends EventEmitter {
 
             <ProcessStatusEvent>{
 
-                service: this.options.id,
+                service:
+                    this.options.id,
 
                 status,
 
@@ -148,6 +178,7 @@ export class ManagedProcess extends EventEmitter {
         );
 
     }
+
 
     //
     // Log
@@ -164,9 +195,11 @@ export class ManagedProcess extends EventEmitter {
 
             <ProcessLogEvent>{
 
-                service: this.options.id,
+                service:
+                    this.options.id,
 
-                timestamp: new Date(),
+                timestamp:
+                    new Date(),
 
                 message,
 
@@ -178,15 +211,18 @@ export class ManagedProcess extends EventEmitter {
 
     }
 
+
     //
     // Spawn
     //
 
     private createProcess(): ChildProcess {
 
-        const options: SpawnOptions = {
+        const options:
+            SpawnOptions = {
 
-            cwd: this.options.cwd,
+            cwd:
+                this.options.cwd,
 
             env: {
 
@@ -197,21 +233,27 @@ export class ManagedProcess extends EventEmitter {
             },
 
             shell:
-                this.options.shell ?? false,
+                this.options.shell ??
+                false,
 
-            windowsHide: true,
+            windowsHide:
+                true,
 
         };
 
-        const child = spawn(
 
-            this.options.command,
+        const child =
+            spawn(
 
-            this.options.args ?? [],
+                this.options.command,
 
-            options,
+                this.options.args ??
+                    [],
 
-        );
+                options,
+
+            );
+
 
         child.stdout?.setEncoding(
             "utf8",
@@ -221,11 +263,15 @@ export class ManagedProcess extends EventEmitter {
             "utf8",
         );
 
-        this.process = child;
+
+        this.process =
+            child;
+
 
         return child;
 
     }
+
 
     //
     // Event Binding
@@ -233,6 +279,7 @@ export class ManagedProcess extends EventEmitter {
 
     private bindProcess(
         child: ChildProcess,
+        operationId: number,
     ): void {
 
         child.stdout?.on(
@@ -242,7 +289,9 @@ export class ManagedProcess extends EventEmitter {
             (chunk: Buffer | string) => {
 
                 const message =
-                    chunk.toString().trim();
+                    chunk
+                        .toString()
+                        .trim();
 
                 if (!message) {
 
@@ -258,6 +307,7 @@ export class ManagedProcess extends EventEmitter {
 
         );
 
+
         child.stderr?.on(
 
             "data",
@@ -265,7 +315,9 @@ export class ManagedProcess extends EventEmitter {
             (chunk: Buffer | string) => {
 
                 const message =
-                    chunk.toString().trim();
+                    chunk
+                        .toString()
+                        .trim();
 
                 if (!message) {
 
@@ -282,17 +334,55 @@ export class ManagedProcess extends EventEmitter {
 
         );
 
+
         child.once(
 
             "spawn",
 
             () => {
 
+                /*
+                 * Abaikan event dari proses
+                 * lama apabila sudah ada
+                 * operasi baru.
+                 */
+
+                if (
+                    operationId !==
+                    this.operationId
+                ) {
+
+                    return;
+
+                }
+
+
                 this.log(
 
                     `Process started (PID ${child.pid})`,
 
                 );
+
+
+                this.starting =
+                    false;
+
+
+                /*
+                 * Jika proses sedang dihentikan
+                 * ketika event spawn datang,
+                 * jangan ubah status kembali
+                 * menjadi running.
+                 */
+
+                if (
+                    this.stopping
+                ) {
+
+                    return;
+
+                }
+
 
                 this.setStatus(
                     "running",
@@ -302,11 +392,18 @@ export class ManagedProcess extends EventEmitter {
 
         );
 
+
         child.once(
 
             "error",
 
             (error: Error) => {
+
+                /*
+                 * Error spawn harus tetap
+                 * dicatat walaupun operasi
+                 * sudah berubah.
+                 */
 
                 this.log(
 
@@ -316,9 +413,28 @@ export class ManagedProcess extends EventEmitter {
 
                 );
 
-                this.process = null;
 
-                this.stopping = false;
+                if (
+                    this.process === child
+                ) {
+
+                    this.process =
+                        null;
+
+                }
+
+
+                this.starting =
+                    false;
+
+                this.stopping =
+                    false;
+
+
+                /*
+                 * Jika proses memang gagal
+                 * dijalankan, status error.
+                 */
 
                 this.setStatus(
                     "error",
@@ -327,6 +443,7 @@ export class ManagedProcess extends EventEmitter {
             },
 
         );
+
 
         child.once(
 
@@ -340,12 +457,25 @@ export class ManagedProcess extends EventEmitter {
                 let message =
                     `Process exited (${code ?? "unknown"})`;
 
+
                 if (signal) {
 
                     message +=
                         ` signal=${signal}`;
 
                 }
+
+
+                /*
+                 * Exit code 0 tidak selalu
+                 * berarti service seharusnya
+                 * dianggap berhasil berjalan.
+                 *
+                 * Jika proses mati ketika
+                 * status masih starting/running,
+                 * tetap kita catat sebagai
+                 * proses berhenti.
+                 */
 
                 this.log(
 
@@ -355,9 +485,39 @@ export class ManagedProcess extends EventEmitter {
 
                 );
 
-                this.process = null;
 
-                this.stopping = false;
+                if (
+                    this.process === child
+                ) {
+
+                    this.process =
+                        null;
+
+                }
+
+
+                this.starting =
+                    false;
+
+                this.stopping =
+                    false;
+
+
+                /*
+                 * Jangan mengubah status proses
+                 * baru akibat event close dari
+                 * proses lama.
+                 */
+
+                if (
+                    operationId !==
+                    this.operationId
+                ) {
+
+                    return;
+
+                }
+
 
                 this.setStatus(
                     "stopped",
@@ -369,50 +529,124 @@ export class ManagedProcess extends EventEmitter {
 
     }
 
+
     //
     // START
     //
 
     public async start(): Promise<void> {
 
-        if (this.process) {
+        /*
+         * Jangan membuat proses kedua
+         * jika proses sedang start/running.
+         */
+
+        if (
+            this.process &&
+            (
+                this.starting ||
+                this.status === "starting" ||
+                this.status === "running"
+            )
+        ) {
 
             this.log(
-                "Process already running.",
+                "Process already running or starting.",
             );
 
             return;
 
         }
 
-        this.stopping = false;
+
+        /*
+         * Jika sedang stopping,
+         * tunggu sampai proses lama
+         * benar-benar selesai.
+         */
+
+        if (
+            this.stopping
+        ) {
+
+            this.log(
+                "Process is stopping. Waiting before start...",
+            );
+
+            await this.waitUntilStopped();
+
+        }
+
+
+        /*
+         * Pastikan reference proses
+         * sudah benar-benar bersih.
+         */
+
+        if (
+            this.process
+        ) {
+
+            this.log(
+                "Cleaning previous process reference.",
+            );
+
+            await this.kill();
+
+        }
+
+
+        this.operationId++;
+
+        const currentOperation =
+            this.operationId;
+
+
+        this.stopping =
+            false;
+
+        this.starting =
+            true;
+
 
         this.setStatus(
             "starting",
         );
 
+
         this.log(
             "Starting process...",
         );
+
 
         try {
 
             const child =
                 this.createProcess();
 
+
             this.bindProcess(
                 child,
+                currentOperation,
             );
+
 
         } catch (error) {
 
-            this.process = null;
+            this.process =
+                null;
 
-            this.stopping = false;
+            this.starting =
+                false;
+
+            this.stopping =
+                false;
+
 
             this.setStatus(
                 "error",
             );
+
 
             this.log(
 
@@ -426,11 +660,75 @@ export class ManagedProcess extends EventEmitter {
 
             );
 
+
             throw error;
 
         }
 
     }
+
+
+    //
+    // Wait Until Stopped
+    //
+
+    private async waitUntilStopped(
+        timeout = 6000,
+    ): Promise<void> {
+
+        if (
+            !this.process
+        ) {
+
+            return;
+
+        }
+
+
+        const startedAt =
+            Date.now();
+
+
+        while (
+            this.process &&
+            Date.now() - startedAt <
+                timeout
+        ) {
+
+            await new Promise<void>(
+                (resolve) => {
+
+                    setTimeout(
+                        resolve,
+                        100,
+                    );
+
+                },
+            );
+
+        }
+
+
+        /*
+         * Jika masih ada proses setelah
+         * timeout, lakukan force kill.
+         */
+
+        if (
+            this.process
+        ) {
+
+            this.log(
+                "Process did not stop in time. Force killing...",
+                true,
+            );
+
+            await this.kill();
+
+        }
+
+    }
+
 
     //
     // Kill Process Tree
@@ -441,11 +739,13 @@ export class ManagedProcess extends EventEmitter {
         const pid =
             this.process?.pid;
 
+
         if (!pid) {
 
             return;
 
         }
+
 
         try {
 
@@ -472,7 +772,8 @@ export class ManagedProcess extends EventEmitter {
 
                     {
 
-                        windowsHide: true,
+                        windowsHide:
+                            true,
 
                     },
 
@@ -498,8 +799,9 @@ export class ManagedProcess extends EventEmitter {
 
                     } catch {
 
-                        // Ignore process
-                        // already terminated.
+                        /*
+                         * Process sudah mati.
+                         */
 
                     }
 
@@ -509,12 +811,17 @@ export class ManagedProcess extends EventEmitter {
 
         } catch {
 
-            // Process may already
-            // have terminated.
+            /*
+             * taskkill dapat mengembalikan
+             * error jika proses sudah mati.
+             * Tidak perlu dianggap sebagai
+             * error aplikasi.
+             */
 
         }
 
     }
+
 
     //
     // STOP
@@ -522,9 +829,16 @@ export class ManagedProcess extends EventEmitter {
 
     public async stop(): Promise<void> {
 
-        if (!this.process) {
+        if (
+            !this.process
+        ) {
 
-            this.stopping = false;
+            this.starting =
+                false;
+
+            this.stopping =
+                false;
+
 
             if (
                 this.status !==
@@ -541,82 +855,111 @@ export class ManagedProcess extends EventEmitter {
 
         }
 
-        if (this.stopping) {
+
+        if (
+            this.stopping
+        ) {
+
+            this.log(
+                "Stop already in progress.",
+            );
 
             return;
 
         }
 
-        this.stopping = true;
+
+        this.operationId++;
+
+        this.starting =
+            false;
+
+        this.stopping =
+            true;
+
 
         this.setStatus(
             "stopping",
         );
 
+
         this.log(
             "Stopping process...",
         );
 
+
         const child =
             this.process;
 
-        await new Promise<void>(
-            (resolve) => {
-
-                let finished = false;
-
-                const finish = () => {
-
-                    if (finished) {
-
-                        return;
-
-                    }
-
-                    finished = true;
-
-                    resolve();
-
-                };
-
-                child.once(
-                    "close",
-                    finish,
-                );
-
-                void this
-                    .terminateTree()
-                    .catch(() => {
-                        // Ignore.
-                    });
-
-                setTimeout(
-                    finish,
-                    5000,
-                );
-
-            },
-        );
 
         /*
-         * Jika proses masih tercatat hidup
-         * setelah timeout, lakukan force
-         * cleanup.
+         * Hentikan seluruh process tree.
          */
 
-        if (this.process === child) {
+        await this.terminateTree();
 
-            this.process = null;
 
-            this.stopping = false;
+        /*
+         * Tunggu event close dari child.
+         */
 
-            this.setStatus(
-                "stopped",
+        const startedAt =
+            Date.now();
+
+
+        while (
+            this.process === child &&
+            Date.now() - startedAt <
+                5000
+        ) {
+
+            await new Promise<void>(
+                (resolve) => {
+
+                    setTimeout(
+                        resolve,
+                        100,
+                    );
+
+                },
             );
 
         }
 
+
+        /*
+         * Jika masih tercatat hidup,
+         * bersihkan reference.
+         */
+
+        if (
+            this.process === child
+        ) {
+
+            this.log(
+                "Process did not report close. Cleaning process reference.",
+                true,
+            );
+
+            this.process =
+                null;
+
+        }
+
+
+        this.starting =
+            false;
+
+        this.stopping =
+            false;
+
+
+        this.setStatus(
+            "stopped",
+        );
+
     }
+
 
     //
     // RESTART
@@ -628,27 +971,32 @@ export class ManagedProcess extends EventEmitter {
             "Restarting process...",
         );
 
+
         await this.stop();
 
-        await new Promise<void>(
 
+        /*
+         * Beri waktu singkat agar
+         * process tree Windows benar-benar
+         * dilepas sebelum spawn ulang.
+         */
+
+        await new Promise<void>(
             (resolve) => {
 
                 setTimeout(
-
                     resolve,
-
                     500,
-
                 );
 
             },
-
         );
+
 
         await this.start();
 
     }
+
 
     //
     // FORCE KILL
@@ -656,21 +1004,92 @@ export class ManagedProcess extends EventEmitter {
 
     public async kill(): Promise<void> {
 
-        if (!this.process) {
+        if (
+            !this.process
+        ) {
+
+            this.starting =
+                false;
+
+            this.stopping =
+                false;
+
+            this.setStatus(
+                "stopped",
+            );
 
             return;
 
         }
 
+
+        this.operationId++;
+
+
         this.log(
             "Force killing process...",
         );
 
+
+        this.starting =
+            false;
+
+        this.stopping =
+            true;
+
+
         await this.terminateTree();
 
-        this.process = null;
 
-        this.stopping = false;
+        /*
+         * Tunggu sebentar agar event
+         * close dapat membersihkan child.
+         */
+
+        const child =
+            this.process;
+
+
+        const startedAt =
+            Date.now();
+
+
+        while (
+            this.process === child &&
+            Date.now() - startedAt <
+                2000
+        ) {
+
+            await new Promise<void>(
+                (resolve) => {
+
+                    setTimeout(
+                        resolve,
+                        50,
+                    );
+
+                },
+            );
+
+        }
+
+
+        if (
+            this.process === child
+        ) {
+
+            this.process =
+                null;
+
+        }
+
+
+        this.starting =
+            false;
+
+        this.stopping =
+            false;
+
 
         this.setStatus(
             "stopped",
@@ -678,13 +1097,36 @@ export class ManagedProcess extends EventEmitter {
 
     }
 
+
     //
     // Dispose
     //
 
     public async dispose(): Promise<void> {
 
-        await this.kill();
+        try {
+
+            await this.stop();
+
+        } catch {
+
+            /*
+             * Jika stop gagal,
+             * tetap coba force kill.
+             */
+
+            try {
+
+                await this.kill();
+
+            } catch {
+
+                // Ignore.
+
+            }
+
+        }
+
 
         this.removeAllListeners();
 

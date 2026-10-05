@@ -69,13 +69,13 @@ function createWindow(): void {
 
             autoHideMenuBar: true,
 
-            title: "Panel Posyandu",
+            title: "Operasional Posyandu",
 
             webPreferences: {
 
                 preload: path.join(
                     __dirname,
-                    "preload.mjs",
+                    "preload.cjs",
                 ),
 
                 contextIsolation: true,
@@ -200,7 +200,7 @@ app.whenReady().then(() => {
  * BEFORE QUIT
  * =========================================================
  *
- * Ketika Panel Posyandu ditutup:
+ * Ketika Operasional Posyandu ditutup:
  *
  * 1. Backend dihentikan
  * 2. Frontend dihentikan
@@ -210,45 +210,44 @@ app.whenReady().then(() => {
  * =========================================================
  */
 
+let shuttingDown = false;
+
 app.on(
 
     "before-quit",
 
     async (event) => {
 
+        if (shuttingDown) {
+
+            return;
+
+        }
+
         event.preventDefault();
+
+        shuttingDown = true;
 
         try {
 
             await manager.shutdown();
+
+            console.log(
+                "[Electron] Posyandu services stopped.",
+            );
 
         }
 
         catch (error) {
 
             console.error(
-                "Panel Posyandu shutdown error:",
+                "[Electron] Shutdown error:",
                 error,
             );
 
         }
 
         finally {
-
-            try {
-
-                await manager.dispose();
-
-            }
-
-            catch (error) {
-
-                console.error(
-                    "ProcessManager dispose error:",
-                    error,
-                );
-
-            }
 
             app.exit(0);
 
