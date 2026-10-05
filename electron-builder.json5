@@ -1,0 +1,56 @@
+// @see https://www.electron.build/configuration/configuration
+
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+
+  "appId": "com.posyandu.operational",
+
+  "productName": "Operasional Posyandu",
+
+  "asar": true,
+
+  "directories": {
+    "output": "../"
+  },
+
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "package.json"
+  ],
+
+  "win": {
+    "icon": "build/icon.ico",
+
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Operasional Posyandu"
+  },
+
+  "mac": {
+    "target": [
+      "dmg"
+    ]
+  },
+
+  "linux": {
+    "target": [
+      "AppImage"
+    ]
+  }
+}
